@@ -141,7 +141,8 @@ async function request(action, body = {}) {
       $("loginStatus").textContent = "Entrando...";
 
       try {
-        const data = await request("/login", {
+        const data = await request("login", {
+  password: $("Bernardo2oo_20").value
           method: "POST",
           body: JSON.stringify({ password: $("password").value })
         });

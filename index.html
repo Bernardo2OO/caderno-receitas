@@ -1,0 +1,289 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meu Caderno de Receitas</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #fffaf5;
+      color: #352820;
+    }
+    header {
+      background: #8b4b32;
+      color: white;
+      padding: 24px 16px;
+      text-align: center;
+    }
+    main { max-width: 800px; margin: 30px auto; padding: 0 16px; }
+    .card {
+      background: white;
+      padding: 22px;
+      margin-bottom: 20px;
+      border-radius: 14px;
+      box-shadow: 0 3px 15px #0000000c;
+    }
+    input, textarea, select, button {
+      width: 100%;
+      padding: 12px;
+      margin: 7px 0;
+      border: 1px solid #ddcec3;
+      border-radius: 8px;
+      font: inherit;
+    }
+    textarea { min-height: 100px; resize: vertical; }
+    button {
+      background: #8b4b32;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:hover { background: #6f3927; }
+    .secondary { background: #777; }
+    .hidden { display: none; }
+    .recipe {
+      border-top: 1px solid #eee0d6;
+      padding: 15px 0;
+    }
+    .recipe h3 { margin-bottom: 5px; }
+    .muted { color: #76685f; font-size: 14px; }
+    #status { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🍰 Meu Caderno de Receitas</h1>
+    <p>Suas receitas favoritas em um só lugar</p>
+  </header>
+
+  <main>
+    <section class="card" id="login">
+      <h2>Entrar no caderno</h2>
+      <p>Digite sua senha para acessar suas receitas.</p>
+      <form id="loginForm">
+        <input id="password" type="password" placeholder="Sua senha"
+          autocomplete="current-password" required>
+        <button type="submit">Entrar</button>
+      </form>
+      <p id="loginStatus" class="muted"></p>
+    </section>
+
+    <section id="app" class="hidden">
+      <div class="card">
+        <h2>Nova receita</h2>
+        <form id="recipeForm">
+          <input id="recipeName" placeholder="Nome da receita" required>
+          <input id="category" placeholder="Categoria (ex.: Bolos, Doces)">
+          <textarea id="ingredients" placeholder="Ingredientes" required></textarea>
+          <textarea id="preparation" placeholder="Modo de preparo" required></textarea>
+          <button type="submit">Salvar receita</button>
+        </form>
+        <p id="status" class="muted"></p>
+      </div>
+
+      <div class="card">
+        <h2>Minhas receitas</h2>
+        <button id="refresh" type="button">Atualizar receitas</button>
+        <div id="recipes"></div>
+      </div>
+
+      <button id="logout" type="button" class="secondary">Sair</button>
+    </section>
+  </main>
+
+  <script>
+    const API = "https://lqiktfmtiilhasuywrmi.supabase.co/functions/v1/caderno-api";
+
+    let sessionToken = "";
+    let recipes = [];
+
+    const $ = id => document.getElementById(id);
+
+    async function request(path, options = {}) {
+      const response = await fetch(API + path, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...(sessionToken ? { "Authorization": "Bearer " + sessionToken } : {}),
+          ...options.headers
+        }
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || data.message || "Erro HTTP " + response.status);
+      }
+
+      return data;
+    }
+
+    $("loginForm").addEventListener("submit", async event => {
+      event.preventDefault();
+      $("loginStatus").textContent = "Entrando...";
+
+      try {
+        const data = await request("/login", {
+          method: "POST",
+          body: JSON.stringify({ password: $("password").value })
+        });
+
+        sessionToken = data.token || data.session || data.access_token || "";
+
+        if (!sessionToken) {
+          throw new Error("A API não retornou o token de sessão esperado.");
+        }
+
+        $("login").classList.add("hidden");
+        $("app").classList.remove("hidden");
+        $("password").value = "";
+        await loadRecipes();
+      } catch (error) {
+        $("loginStatus").textContent = "Não foi possível entrar: " + error.message;
+      }
+    });
+
+    async function loadRecipes() {
+      $("recipes").textContent = "Carregando receitas...";
+
+      try {
+        const data = await request("/recipes");
+        recipes = Array.isArray(data) ? data : (data.recipes || []);
+        renderRecipes();
+      } catch (error) {
+        $("recipes").textContent = "Erro ao carregar: " + error.message;
+      }
+    }
+
+    function renderRecipes() {
+      $("recipes").replaceChildren();
+
+      if (!recipes.length) {
+        $("recipes").textContent = "Nenhuma receita encontrada.";
+        return;
+      }
+
+      recipes.forEach((recipe, index) => {
+        const article = document.createElement("article");
+        article.className = "recipe";
+
+        const title = document.createElement("h3");
+        title.textContent = recipe.name || recipe.nome || "Receita sem nome";
+
+        const category = document.createElement("p");
+        category.className = "muted";
+        category.textContent = recipe.category || recipe.categoria || "";
+
+        const ingredients = document.createElement("p");
+        ingredients.textContent = "Ingredientes: " +
+          (recipe.ingredients || recipe.ingredientes || "");
+
+        const preparation = document.createElement("p");
+        preparation.textContent = "Preparo: " +
+          (recipe.preparation || recipe.preparo || recipe.instructions || "");
+
+        const edit = document.createElement("button");
+        edit.textContent = "Editar";
+        edit.addEventListener("click", () => editRecipe(index));
+
+        const remove = document.createElement("button");
+        remove.textContent = "Excluir";
+        remove.className = "secondary";
+        remove.addEventListener("click", () => deleteRecipe(index));
+
+        article.append(title, category, ingredients, preparation, edit, remove);
+        $("recipes").append(article);
+      });
+    }
+
+    $("recipeForm").addEventListener("submit", async event => {
+      event.preventDefault();
+      $("status").textContent = "Salvando...";
+
+      try {
+        await request("/recipes", {
+          method: "POST",
+          body: JSON.stringify({
+            name: $("recipeName").value.trim(),
+            category: $("category").value.trim(),
+            ingredients: $("ingredients").value.trim(),
+            preparation: $("preparation").value.trim()
+          })
+        });
+
+        $("recipeForm").reset();
+        $("status").textContent = "Receita salva!";
+        await loadRecipes();
+      } catch (error) {
+        $("status").textContent = "Erro ao salvar: " + error.message;
+      }
+    });
+
+    async function editRecipe(index) {
+      const recipe = recipes[index];
+      const name = prompt("Nome da receita:", recipe.name || recipe.nome || "");
+      if (name === null) return;
+
+      const category = prompt("Categoria:", recipe.category || recipe.categoria || "");
+      if (category === null) return;
+
+      const ingredients = prompt("Ingredientes:", recipe.ingredients || recipe.ingredientes || "");
+      if (ingredients === null) return;
+
+      const preparation = prompt("Modo de preparo:", recipe.preparation || recipe.preparo || "");
+      if (preparation === null) return;
+
+      const id = recipe.id;
+      if (id == null) {
+        alert("Esta receita não possui um ID retornado pela API.");
+        return;
+      }
+
+      try {
+        await request("/recipes/" + encodeURIComponent(id), {
+          method: "PUT",
+          body: JSON.stringify({ name, category, ingredients, preparation })
+        });
+        await loadRecipes();
+      } catch (error) {
+        alert("Erro ao editar: " + error.message);
+      }
+    }
+
+    async function deleteRecipe(index) {
+      const recipe = recipes[index];
+      if (!confirm("Deseja excluir esta receita?")) return;
+
+      if (recipe.id == null) {
+        alert("Esta receita não possui um ID retornado pela API.");
+        return;
+      }
+
+      try {
+        await request("/recipes/" + encodeURIComponent(recipe.id), {
+          method: "DELETE"
+        });
+        await loadRecipes();
+      } catch (error) {
+        alert("Erro ao excluir: " + error.message);
+      }
+    }
+
+    $("refresh").addEventListener("click", loadRecipes);
+
+    $("logout").addEventListener("click", () => {
+      sessionToken = "";
+      recipes = [];
+      $("app").classList.add("hidden");
+      $("login").classList.remove("hidden");
+      $("recipes").replaceChildren();
+      $("loginStatus").textContent = "";
+    });
+  </script>
+</body>
+</html>

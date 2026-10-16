@@ -103,15 +103,28 @@
     let recipes = [];
 
     const $ = id => document.getElementById(id);
+   
+async function request(action, body = {}) {
+  const response = await fetch(API, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(sessionToken
+        ? { "Authorization": "Bearer " + sessionToken }
+        : {})
+    },
+    body: JSON.stringify({ ...body, action })
+  });
 
-    async function request(path, options = {}) {
-      const response = await fetch(API + path, {
-        ...options,
-        headers: {
-          "Content-Type": "application/json",
-          ...(sessionToken ? { "Authorization": "Bearer " + sessionToken } : {}),
-          ...options.headers
-        }
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.error || "Erro HTTP " + response.status);
+  }
+
+  return result;
+}
+
       });
 
       const data = await response.json().catch(() => ({}));
